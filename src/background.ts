@@ -1,10 +1,10 @@
 'use strict'
 
-import { app, protocol, BrowserWindow } from 'electron'
+import { app, protocol, BrowserWindow, ipcMain, dialog} from 'electron'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
 const isDevelopment = process.env.NODE_ENV !== 'production'
-
+import * as fs from 'fs'
 // Scheme must be registered before the app is ready
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { secure: true, standard: true } }
@@ -16,12 +16,13 @@ async function createWindow() {
     width: 800,
     height: 600,
     webPreferences: {
-      
+
       // Use pluginOptions.nodeIntegration, leave this alone
       // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
       nodeIntegration: (process.env
           .ELECTRON_NODE_INTEGRATION as unknown) as boolean,
-      contextIsolation: !process.env.ELECTRON_NODE_INTEGRATION
+      contextIsolation: !process.env.ELECTRON_NODE_INTEGRATION,
+      preload:__dirname + '/preload.js'
     }
   })
 
@@ -34,6 +35,59 @@ async function createWindow() {
     // Load the index.html when not in development
     win.loadURL('app://./index.html')
   }
+
+  ipcMain.on('openVrm', async (event) => {
+    const files = await dialog.showOpenDialog(
+      win!,
+      {
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'VRM Model',
+            extensions: ['vrm']
+          }
+        ]
+      }
+    )
+    if (files) {
+      event.returnValue = fs.readFileSync(files.filePaths[0])
+    }
+    event.returnValue = null
+
+  })
+
+  ipcMain.on('watch', async (event, key) => {
+    const files = await dialog.showOpenDialog(
+      win,
+      {
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'Select watch target image',
+            extensions: ['png', 'psd']
+          }
+        ]
+      }
+    )
+    if (files.filePaths) {
+      const imagePath = (files.filePaths[0]);
+      const loader = async () => {
+
+        fs.readFile(imagePath,function (err, data) {
+          win.webContents.send('update', {
+            key:key+'',
+            psd:imagePath.match(/\.psd$/),
+            data
+          })
+        });
+
+      }
+      fs.watchFile(imagePath, () => {
+        loader()
+      })
+      loader()
+    }
+  })
 }
 
 // Quit when all windows are closed.
@@ -80,3 +134,4 @@ if (isDevelopment) {
     })
   }
 }
+
